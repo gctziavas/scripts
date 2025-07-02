@@ -59,9 +59,10 @@ KUBECONFIG PRIORITY:
 
 REQUIREMENTS FOR PDF CONVERSION:
     Linux: sudo apt install pandoc wkhtmltopdf
-    macOS:  brew install pandoc wkhtmltopdf
+    macOS:  brew install pandoc (wkhtmltopdf discontinued - using LaTeX engine)
     - pandoc is required for markdown to PDF conversion
-    - wkhtmltopdf is recommended for better PDF formatting
+    - wkhtmltopdf provides better formatting on Linux but is discontinued on macOS
+    - On macOS, LaTeX engine is used as fallback (brew install --cask basictex)
 
 EOF
 }
@@ -160,7 +161,8 @@ convert_to_pdf() {
         # Detect OS and provide appropriate installation instructions
         if [[ "$OSTYPE" == "darwin"* ]]; then
             echo "Install pandoc on macOS with: brew install pandoc"
-            echo "For better PDF formatting, also install: brew install wkhtmltopdf"
+            echo "For LaTeX PDF engine, also install: brew install --cask basictex"
+            echo "Note: wkhtmltopdf has been discontinued on macOS"
         elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
             echo "Install pandoc on Linux with: sudo apt install pandoc"
             echo "For better PDF formatting, also install: sudo apt install wkhtmltopdf"
@@ -170,8 +172,21 @@ convert_to_pdf() {
         return 1
     fi
     
-    # Try to convert with wkhtmltopdf engine first (better formatting)
-    if command -v wkhtmltopdf &> /dev/null; then
+    # Use different PDF engines based on OS and availability
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # On macOS, prefer LaTeX engine since wkhtmltopdf is discontinued
+        echo "Using LaTeX engine for PDF generation on macOS..."
+        pandoc "$markdown_file" -f markdown -t pdf \
+            -V geometry:margin=20mm \
+            -V fontsize=11pt \
+            -V documentclass=article \
+            -V colorlinks=true \
+            -V linkcolor=blue \
+            -V urlcolor=blue \
+            -V toccolor=gray \
+            -o "$pdf_file"
+    elif command -v wkhtmltopdf &> /dev/null; then
+        # On Linux, use wkhtmltopdf if available
         echo "Using wkhtmltopdf engine for better PDF formatting..."
         
         # Create a temporary CSS file for better cross-platform compatibility
@@ -229,9 +244,7 @@ EOF
         rm -f "$temp_css"
     else
         echo "Using default PDF engine..."
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            echo "For better formatting on macOS, install: brew install wkhtmltopdf"
-        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
             echo "For better formatting on Linux, install: sudo apt install wkhtmltopdf"
         fi
         pandoc "$markdown_file" -f markdown -t pdf -o "$pdf_file"
