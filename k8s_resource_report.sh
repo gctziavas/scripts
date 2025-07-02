@@ -36,6 +36,7 @@ OPTIONS:
     -pdf, --pdf              Convert markdown to PDF (requires pandoc)
     -m, --metrics-server     Install metrics server if not present (for resource usage data)
     -h, --help               Show this help message
+    
 
 EXAMPLES:
     $0                                          # Basic cluster exploration
@@ -47,6 +48,8 @@ EXAMPLES:
     $0 --markdown --metrics-server              # Generate report with metrics server installation
     $0 --markdown --pdf                         # Generate markdown report and convert to PDF
     $0 --markdown --pdf --markdown-name report.md  # Custom markdown file name and convert to PDF
+    $0 --pdf                                    # Generate PDF only (no markdown file kept)
+    $0 --pdf --markdown-name report.md          # Generate PDF only with custom base name
 
 KUBECONFIG PRIORITY:
     1. Command line argument (-k/--kubeconfig)
@@ -80,8 +83,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -pdf|--pdf)
             CONVERT_TO_PDF=true
-            # PDF conversion requires markdown output
-            MARKDOWN_OUTPUT=true
             shift
             ;;
         -m|--metrics-server)
@@ -115,6 +116,17 @@ fi
 # Set default markdown file name if not specified
 if [[ "$MARKDOWN_OUTPUT" == "true" && -z "$MARKDOWN_FILE" ]]; then
     MARKDOWN_FILE="$DEFAULT_MARKDOWN_FILE"
+fi
+
+# For PDF conversion, ensure we have a markdown file (temporary if needed)
+if [[ "$CONVERT_TO_PDF" == "true" && -z "$MARKDOWN_FILE" ]]; then
+    if [[ "$MARKDOWN_OUTPUT" == "false" ]]; then
+        # PDF-only mode: use temporary markdown file
+        MARKDOWN_FILE=$(mktemp --suffix=.md)
+    else
+        # PDF + markdown mode: use default markdown file
+        MARKDOWN_FILE="$DEFAULT_MARKDOWN_FILE"
+    fi
 fi
 
 # Set kubeconfig
@@ -540,14 +552,38 @@ fi
 }
 
 # Execute the cluster exploration
-if [[ "$MARKDOWN_OUTPUT" == "true" && -n "$MARKDOWN_FILE" ]]; then
-    echo "Generating markdown report: $MARKDOWN_FILE"
+if [[ "$MARKDOWN_OUTPUT" == "true" || "$CONVERT_TO_PDF" == "true" ]]; then
+    # Determine if this is PDF-only mode
+    local pdf_only_mode=false
+    if [[ "$CONVERT_TO_PDF" == "true" && "$MARKDOWN_OUTPUT" == "false" ]]; then
+        pdf_only_mode=true
+        echo "Generating PDF report..."
+    elif [[ "$CONVERT_TO_PDF" == "true" ]]; then
+        echo "Generating markdown report: $MARKDOWN_FILE"
+    else
+        echo "Generating markdown report: $MARKDOWN_FILE"
+    fi
+    
     run_cluster_exploration > "$MARKDOWN_FILE"
-    echo "Report saved to: $MARKDOWN_FILE"
+    
+    if [[ "$pdf_only_mode" != "true" ]]; then
+        echo "Report saved to: $MARKDOWN_FILE"
+    fi
     
     # Convert to PDF if requested
     if [[ "$CONVERT_TO_PDF" == "true" ]]; then
-        convert_to_pdf "$MARKDOWN_FILE"
+        if convert_to_pdf "$MARKDOWN_FILE"; then
+            # If PDF-only mode and conversion was successful, remove the markdown file
+            if [[ "$pdf_only_mode" == "true" ]]; then
+                rm -f "$MARKDOWN_FILE"
+                echo "Temporary markdown file cleaned up."
+            fi
+        else
+            # If PDF conversion failed in PDF-only mode, keep the markdown file for debugging
+            if [[ "$pdf_only_mode" == "true" ]]; then
+                echo "PDF conversion failed. Markdown file preserved at: $MARKDOWN_FILE"
+            fi
+        fi
     fi
 else
     run_cluster_exploration
