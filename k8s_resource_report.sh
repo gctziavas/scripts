@@ -126,12 +126,20 @@ if [[ "$CONVERT_TO_PDF" == "true" && -z "$MARKDOWN_FILE" ]]; then
         # macOS and Linux have different mktemp syntax
         if [[ "$OSTYPE" == "darwin"* ]]; then
             MARKDOWN_FILE=$(mktemp -t k8s_report_XXXXXX).md
+            PDF_FILE="$(pwd)/k8s_resources_report.pdf"
         else
             MARKDOWN_FILE=$(mktemp --suffix=.md)
+            PDF_FILE="$(pwd)/k8s_resources_report.pdf"
         fi
     else
         # PDF + markdown mode: use default markdown file
         MARKDOWN_FILE="$DEFAULT_MARKDOWN_FILE"
+        PDF_FILE="${MARKDOWN_FILE%.md}.pdf"
+    fi
+else
+    # PDF file name based on markdown file name
+    if [[ "$CONVERT_TO_PDF" == "true" ]]; then
+        PDF_FILE="${MARKDOWN_FILE%.md}.pdf"
     fi
 fi
 
@@ -162,7 +170,12 @@ install_metrics_server() {
 # Function to convert markdown to PDF
 convert_to_pdf() {
     local markdown_file="$1"
-    local pdf_file="${markdown_file%.md}.pdf"
+    # If PDF_FILE is set globally, use it; otherwise generate from markdown filename
+    if [[ -n "$PDF_FILE" ]]; then
+        local pdf_file="$PDF_FILE"
+    else
+        local pdf_file="${markdown_file%.md}.pdf"
+    fi
     
     echo "Converting markdown to PDF..."
     
@@ -301,6 +314,8 @@ EOF
     
     if [[ $? -eq 0 ]]; then
         echo "PDF report saved to: $pdf_file"
+        # Update the global PDF_FILE variable for reference in the main script
+        PDF_FILE="$pdf_file"
         return 0
     else
         echo "Error: Failed to convert markdown to PDF"
@@ -644,6 +659,7 @@ if [[ "$MARKDOWN_OUTPUT" == "true" || "$CONVERT_TO_PDF" == "true" ]]; then
             if [[ "$pdf_only_mode" == "true" ]]; then
                 rm -f "$MARKDOWN_FILE"
                 echo "Temporary markdown file cleaned up."
+                echo "PDF report is available at: $PDF_FILE"
             fi
         else
             # If PDF conversion failed in PDF-only mode, keep the markdown file for debugging
