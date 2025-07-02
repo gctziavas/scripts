@@ -33,23 +33,23 @@ OPTIONS:
     -k, --kubeconfig PATH    Path to kubeconfig file (default: $default_display)
     -md, --markdown          Output in markdown format
     -mn, --markdown-name     Markdown output file name (default: $DEFAULT_MARKDOWN_FILE)
-    -pdf, --pdf              Convert markdown to PDF (requires pandoc)
+    -pdf, --pdf              Convert markdown to PDF (saves to current directory)
     -m, --metrics-server     Install metrics server if not present (for resource usage data)
     -h, --help               Show this help message
     
 
 EXAMPLES:
-    $0                                          # Basic cluster exploration
-    $0 --markdown                               # Generate markdown report (saves to $DEFAULT_MARKDOWN_FILE)
-    $0 -k ~/.kube/config                        # Use custom kubeconfig
-    $0 --kubeconfig /path/to/config --markdown  # Custom kubeconfig with markdown output
-    $0 --markdown --markdown-name my-report.md  # Custom markdown file name
-    $0 --metrics-server                         # Install metrics server for resource usage data
-    $0 --markdown --metrics-server              # Generate report with metrics server installation
-    $0 --markdown --pdf                         # Generate markdown report and convert to PDF
+    $0                                             # Basic cluster exploration
+    $0 --markdown                                  # Generate markdown report (saves to $DEFAULT_MARKDOWN_FILE)
+    $0 -k ~/.kube/config                           # Use custom kubeconfig
+    $0 --kubeconfig /path/to/config --markdown     # Custom kubeconfig with markdown output
+    $0 --markdown --markdown-name my-report.md     # Custom markdown file name
+    $0 --metrics-server                            # Install metrics server for resource usage data
+    $0 --markdown --metrics-server                 # Generate report with metrics server installation
+    $0 --markdown --pdf                            # Generate markdown report and convert to PDF
     $0 --markdown --pdf --markdown-name report.md  # Custom markdown file name and convert to PDF
-    $0 --pdf                                    # Generate PDF only (no markdown file kept)
-    $0 --pdf --markdown-name report.md          # Generate PDF only with custom base name
+    $0 --pdf                                       # Generate PDF only (saved to ./k8s_resources_report.pdf)
+    $0 --pdf --markdown-name report.md             # Generate PDF only with custom base name (saved to ./report.pdf)
 
 KUBECONFIG PRIORITY:
     1. Command line argument (-k/--kubeconfig)
@@ -63,6 +63,11 @@ REQUIREMENTS FOR PDF CONVERSION:
     - pandoc is required for markdown to PDF conversion
     - wkhtmltopdf provides better formatting on Linux but is discontinued on macOS
     - On macOS, LaTeX engine is used as fallback (brew install --cask basictex)
+
+PDF OUTPUT LOCATION:
+    - When using --pdf without --markdown, the PDF is saved to the current directory as k8s_resources_report.pdf
+    - When using --pdf with --markdown-name, the PDF uses the same name with .pdf extension
+    - When using --pdf with --markdown, both files use the same base name (default: k8s_resources_report)
 
 EOF
 }
