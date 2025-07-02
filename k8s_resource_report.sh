@@ -138,6 +138,12 @@ fi
 # Set kubeconfig
 export KUBECONFIG="$KUBECONFIG_PATH"
 
+# Function to strip ANSI escape sequences from text
+strip_ansi_codes() {
+    # This sed pattern removes all ANSI escape sequences (color codes, etc.)
+    sed 's/\x1B\[[0-9;]*[mGKHF]//g'
+}
+
 # Function to check and install metrics server
 install_metrics_server() {
     echo "Checking if metrics server is installed..."
@@ -181,7 +187,18 @@ convert_to_pdf() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # On macOS, prefer LaTeX engine since wkhtmltopdf is discontinued
         echo "Using LaTeX engine for PDF generation on macOS..."
-        pandoc "$markdown_file" -f markdown -t pdf \
+        
+        # Pre-process the markdown file to ensure it's clean of problematic characters
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            temp_md=$(mktemp -t clean_md_XXXXXX).md
+        else
+            temp_md=$(mktemp --suffix=.md)
+        fi
+        
+        # Additional cleanup for any remaining special characters
+        cat "$markdown_file" | sed 's/\x1B\[[0-9;]*[mGKHF]//g' > "$temp_md"
+        
+        pandoc "$temp_md" -f markdown -t pdf \
             -V geometry:margin=20mm \
             -V fontsize=11pt \
             -V documentclass=article \
@@ -190,6 +207,9 @@ convert_to_pdf() {
             -V urlcolor=blue \
             -V toccolor=gray \
             -o "$pdf_file"
+            
+        # Clean up temporary file
+        rm -f "$temp_md"
     elif command -v wkhtmltopdf &> /dev/null; then
         # On Linux, use wkhtmltopdf if available
         echo "Using wkhtmltopdf engine for better PDF formatting..."
@@ -197,9 +217,15 @@ convert_to_pdf() {
         # Create a temporary CSS file for better cross-platform compatibility
         if [[ "$OSTYPE" == "darwin"* ]]; then
             temp_css=$(mktemp -t pandoc_css_XXXXXX).css
+            temp_md=$(mktemp -t clean_md_XXXXXX).md
         else
             temp_css=$(mktemp)
+            temp_md=$(mktemp --suffix=.md)
         fi
+        
+        # Clean up the markdown file for any problematic characters
+        cat "$markdown_file" | sed 's/\x1B\[[0-9;]*[mGKHF]//g' > "$temp_md"
+        
         cat > "$temp_css" << 'EOF'
 body { 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
@@ -240,7 +266,7 @@ th {
 }
 EOF
         
-        pandoc "$markdown_file" -f markdown -t html5 --pdf-engine=wkhtmltopdf \
+        pandoc "$temp_md" -f markdown -t html5 --pdf-engine=wkhtmltopdf \
             --css "$temp_css" \
             --pdf-engine-opt=--page-size --pdf-engine-opt=A4 \
             --pdf-engine-opt=--margin-top --pdf-engine-opt=20mm \
@@ -249,14 +275,28 @@ EOF
             --pdf-engine-opt=--margin-right --pdf-engine-opt=15mm \
             -o "$pdf_file" 2>/dev/null
         
-        # Clean up temporary CSS file
-        rm -f "$temp_css"
+        # Clean up temporary files
+        rm -f "$temp_css" "$temp_md"
     else
         echo "Using default PDF engine..."
         if [[ "$OSTYPE" == "linux-gnu"* ]]; then
             echo "For better formatting on Linux, install: sudo apt install wkhtmltopdf"
         fi
-        pandoc "$markdown_file" -f markdown -t pdf -o "$pdf_file"
+        
+        # Pre-process the markdown file to ensure it's clean of problematic characters
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            temp_md=$(mktemp -t clean_md_XXXXXX).md
+        else
+            temp_md=$(mktemp --suffix=.md)
+        fi
+        
+        # Additional cleanup for any remaining special characters
+        cat "$markdown_file" | sed 's/\x1B\[[0-9;]*[mGKHF]//g' > "$temp_md"
+        
+        pandoc "$temp_md" -f markdown -t pdf -o "$pdf_file"
+        
+        # Clean up temporary file
+        rm -f "$temp_md"
     fi
     
     if [[ $? -eq 0 ]]; then
@@ -586,7 +626,12 @@ if [[ "$MARKDOWN_OUTPUT" == "true" || "$CONVERT_TO_PDF" == "true" ]]; then
         echo "Generating markdown report: $MARKDOWN_FILE"
     fi
     
-    run_cluster_exploration > "$MARKDOWN_FILE"
+    # If generating PDF, strip ANSI codes from output
+    if [[ "$CONVERT_TO_PDF" == "true" ]]; then
+        run_cluster_exploration | strip_ansi_codes > "$MARKDOWN_FILE"
+    else
+        run_cluster_exploration > "$MARKDOWN_FILE"
+    fi
     
     if [[ "$pdf_only_mode" != "true" ]]; then
         echo "Report saved to: $MARKDOWN_FILE"
