@@ -123,7 +123,12 @@ fi
 if [[ "$CONVERT_TO_PDF" == "true" && -z "$MARKDOWN_FILE" ]]; then
     if [[ "$MARKDOWN_OUTPUT" == "false" ]]; then
         # PDF-only mode: use temporary markdown file
-        MARKDOWN_FILE=$(mktemp --suffix=.md)
+        # macOS and Linux have different mktemp syntax
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            MARKDOWN_FILE=$(mktemp -t k8s_report_XXXXXX).md
+        else
+            MARKDOWN_FILE=$(mktemp --suffix=.md)
+        fi
     else
         # PDF + markdown mode: use default markdown file
         MARKDOWN_FILE="$DEFAULT_MARKDOWN_FILE"
@@ -190,7 +195,11 @@ convert_to_pdf() {
         echo "Using wkhtmltopdf engine for better PDF formatting..."
         
         # Create a temporary CSS file for better cross-platform compatibility
-        local temp_css=$(mktemp)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            temp_css=$(mktemp -t pandoc_css_XXXXXX).css
+        else
+            temp_css=$(mktemp)
+        fi
         cat > "$temp_css" << 'EOF'
 body { 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
@@ -567,7 +576,7 @@ fi
 # Execute the cluster exploration
 if [[ "$MARKDOWN_OUTPUT" == "true" || "$CONVERT_TO_PDF" == "true" ]]; then
     # Determine if this is PDF-only mode
-    local pdf_only_mode=false
+    pdf_only_mode=false
     if [[ "$CONVERT_TO_PDF" == "true" && "$MARKDOWN_OUTPUT" == "false" ]]; then
         pdf_only_mode=true
         echo "Generating PDF report..."
