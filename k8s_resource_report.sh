@@ -15,6 +15,7 @@ KUBECONFIG_PATH="$DEFAULT_KUBECONFIG"
 MARKDOWN_OUTPUT=false
 MARKDOWN_FILE=""
 INSTALL_METRICS_SERVER=false
+CONVERT_TO_PDF=false
 
 # Function to show help
 show_help() {
@@ -32,6 +33,7 @@ OPTIONS:
     -k, --kubeconfig PATH    Path to kubeconfig file (default: $default_display)
     -md, --markdown          Output in markdown format
     -mn, --markdown-name     Markdown output file name (default: $DEFAULT_MARKDOWN_FILE)
+    -pdf, --pdf              Convert markdown to PDF (requires pandoc)
     -m, --metrics-server     Install metrics server if not present (for resource usage data)
     -h, --help               Show this help message
 
@@ -43,12 +45,20 @@ EXAMPLES:
     $0 --markdown --markdown-name my-report.md  # Custom markdown file name
     $0 --metrics-server                         # Install metrics server for resource usage data
     $0 --markdown --metrics-server              # Generate report with metrics server installation
+    $0 --markdown --pdf                         # Generate markdown report and convert to PDF
+    $0 --markdown --pdf --markdown-name report.md  # Custom markdown file name and convert to PDF
 
 KUBECONFIG PRIORITY:
     1. Command line argument (-k/--kubeconfig)
     2. KUBECONFIG environment variable
     3. ./kubeconfig.yaml (if exists)
     4. Fail with error
+
+REQUIREMENTS FOR PDF CONVERSION:
+    Linux: sudo apt install pandoc wkhtmltopdf
+    macOS:  brew install pandoc wkhtmltopdf
+    - pandoc is required for markdown to PDF conversion
+    - wkhtmltopdf is recommended for better PDF formatting
 
 EOF
 }
@@ -67,6 +77,12 @@ while [[ $# -gt 0 ]]; do
         -mn|--markdown-name)
             MARKDOWN_FILE="$2"
             shift 2
+            ;;
+        -pdf|--pdf)
+            CONVERT_TO_PDF=true
+            # PDF conversion requires markdown output
+            MARKDOWN_OUTPUT=true
+            shift
             ;;
         -m|--metrics-server)
             INSTALL_METRICS_SERVER=true
@@ -116,6 +132,108 @@ install_metrics_server() {
         kubectl wait --for=condition=available --timeout=120s deployment/metrics-server -n kube-system
     else
         echo "Metrics server is already installed."
+    fi
+}
+
+# Function to convert markdown to PDF
+convert_to_pdf() {
+    local markdown_file="$1"
+    local pdf_file="${markdown_file%.md}.pdf"
+    
+    echo "Converting markdown to PDF..."
+    
+    # Check if pandoc is installed
+    if ! command -v pandoc &> /dev/null; then
+        echo "Error: pandoc is not installed."
+        # Detect OS and provide appropriate installation instructions
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "Install pandoc on macOS with: brew install pandoc"
+            echo "For better PDF formatting, also install: brew install wkhtmltopdf"
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            echo "Install pandoc on Linux with: sudo apt install pandoc"
+            echo "For better PDF formatting, also install: sudo apt install wkhtmltopdf"
+        else
+            echo "Install pandoc for your system. Visit: https://pandoc.org/installing.html"
+        fi
+        return 1
+    fi
+    
+    # Try to convert with wkhtmltopdf engine first (better formatting)
+    if command -v wkhtmltopdf &> /dev/null; then
+        echo "Using wkhtmltopdf engine for better PDF formatting..."
+        
+        # Create a temporary CSS file for better cross-platform compatibility
+        local temp_css=$(mktemp)
+        cat > "$temp_css" << 'EOF'
+body { 
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+    margin: 40px; 
+    line-height: 1.6;
+}
+pre { 
+    background-color: #f5f5f5; 
+    padding: 10px; 
+    border-radius: 5px; 
+    overflow-x: auto; 
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+code { 
+    background-color: #f5f5f5; 
+    padding: 2px 4px; 
+    border-radius: 3px; 
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+h1, h2, h3 { 
+    color: #2c3e50; 
+    margin-top: 2em;
+    margin-bottom: 1em;
+}
+table { 
+    border-collapse: collapse; 
+    width: 100%; 
+    margin: 1em 0;
+}
+th, td { 
+    border: 1px solid #ddd; 
+    padding: 8px; 
+    text-align: left; 
+}
+th { 
+    background-color: #f2f2f2; 
+    font-weight: bold;
+}
+EOF
+        
+        pandoc "$markdown_file" -f markdown -t html5 --pdf-engine=wkhtmltopdf \
+            --css "$temp_css" \
+            --pdf-engine-opt=--page-size --pdf-engine-opt=A4 \
+            --pdf-engine-opt=--margin-top --pdf-engine-opt=20mm \
+            --pdf-engine-opt=--margin-bottom --pdf-engine-opt=20mm \
+            --pdf-engine-opt=--margin-left --pdf-engine-opt=15mm \
+            --pdf-engine-opt=--margin-right --pdf-engine-opt=15mm \
+            -o "$pdf_file" 2>/dev/null
+        
+        # Clean up temporary CSS file
+        rm -f "$temp_css"
+    else
+        echo "Using default PDF engine..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "For better formatting on macOS, install: brew install wkhtmltopdf"
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            echo "For better formatting on Linux, install: sudo apt install wkhtmltopdf"
+        fi
+        pandoc "$markdown_file" -f markdown -t pdf -o "$pdf_file"
+    fi
+    
+    if [[ $? -eq 0 ]]; then
+        echo "PDF report saved to: $pdf_file"
+        return 0
+    else
+        echo "Error: Failed to convert markdown to PDF"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "On macOS, you might also try: brew install --cask basictex"
+        fi
+        return 1
     fi
 }
 
@@ -426,6 +544,11 @@ if [[ "$MARKDOWN_OUTPUT" == "true" && -n "$MARKDOWN_FILE" ]]; then
     echo "Generating markdown report: $MARKDOWN_FILE"
     run_cluster_exploration > "$MARKDOWN_FILE"
     echo "Report saved to: $MARKDOWN_FILE"
+    
+    # Convert to PDF if requested
+    if [[ "$CONVERT_TO_PDF" == "true" ]]; then
+        convert_to_pdf "$MARKDOWN_FILE"
+    fi
 else
     run_cluster_exploration
 fi
